@@ -239,7 +239,7 @@ s4.addShape(pres.ShapeType.roundRect, {
 s4.addText(
   [
     { text: "Live at: ", options: { bold: true, color: "7FE3C8" } },
-    { text: "[add hosted URL here once deployed]   ", options: { color: ICE } },
+    { text: "churn-risk-scoring-india.onrender.com   ", options: { color: ICE } },
     { text: "Fallback: ", options: { bold: true, color: "7FE3C8" } },
     { text: "uvicorn api:app --reload --port 8000, then open the prototype HTML", options: { color: ICE } },
   ],
