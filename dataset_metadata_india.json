@@ -1,0 +1,7 @@
+{
+  "high_value_threshold_inr": 368.5,
+  "high_value_customers": 30011,
+  "churn_rate_pct": 8.64,
+  "best_model": "xgboost",
+  "best_feature_set": "full_fields"
+}

@@ -1,0 +1,11 @@
+data/
+data_india/
+charts/
+screenshots/
+__pycache__/
+*.pyc
+*.csv
+*.npz
+*.pdf
+*.docx
+train_log*.txt

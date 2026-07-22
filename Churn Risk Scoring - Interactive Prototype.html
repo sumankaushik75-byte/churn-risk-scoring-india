@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Churn risk scoring prototype (India)</title>
+<style>
+  :root {
+    --bg: #f7f6f2; --card: #ffffff; --border: #e1e0d9; --border-strong: #c3c2b7;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+    --green: #0F6E56; --green-bg: #E1F5EE; --amber: #854F0B; --amber-bg: #FAEEDA;
+    --red: #791F1F; --red-bg: #FCEBEB; --accent: #185FA5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text-primary); margin: 0; padding: 32px 16px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; display: inline-block; }
+  .sub { font-size: 13px; color: var(--text-muted); margin: 0 0 24px; line-height: 1.5; }
+  .titlebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .status { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+  .status.connected { background: var(--green-bg); color: var(--green); }
+  .status.offline { background: var(--red-bg); color: var(--red); }
+  .status.checking { background: #eee; color: var(--text-muted); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 20px; }
+  .card h2 { font-size: 14px; font-weight: 600; margin: 0 0 16px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em; }
+  .mtable { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+  .mtable th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--text-muted); font-weight: 600; text-align: center; padding: 0 4px 6px; }
+  .mtable th:first-child { text-align: left; }
+  .mtable td { padding: 4px 4px; }
+  .mtable td:first-child { font-size: 12.5px; color: var(--text-secondary); width: 30%; }
+  .mtable input[type=number] {
+    width: 100%; padding: 6px 6px; border-radius: 6px; border: 1px solid var(--border-strong);
+    font-size: 13px; text-align: center;
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; margin-bottom: 16px; }
+  label { font-size: 13px; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+  .result { background: #f4f3ef; border-radius: 10px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; min-height: 64px; }
+  .risk-value { font-size: 34px; font-weight: 700; margin: 0; }
+  .risk-label { font-size: 12px; color: var(--text-muted); margin: 0 0 2px; }
+  .badge { font-size: 12px; padding: 4px 12px; border-radius: 6px; font-weight: 600; display: inline-block; }
+  .action { font-size: 13px; color: var(--text-secondary); margin: 6px 0 0; max-width: 320px; text-align: right; }
+  .error-msg { font-size: 12.5px; color: var(--red); margin: 0; }
+  .list-note { font-size: 13px; color: var(--text-muted); margin: 0 0 12px; line-height: 1.5; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; font-size: 12px; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: none; }
+  .row.top { border-left: 3px solid var(--red); }
+  .row .id { color: var(--text-muted); width: 82px; flex-shrink: 0; }
+  .row .aon { color: var(--text-secondary); width: 60px; flex-shrink: 0; }
+  .row .rech { color: var(--text-secondary); width: 70px; flex-shrink: 0; }
+  .bar-track { flex: 1; min-width: 60px; background: #ece9e2; border-radius: 4px; height: 6px; position: relative; overflow: hidden; }
+  .bar-fill { position: absolute; left: 0; top: 0; bottom: 0; }
+  .row .pct { width: 38px; text-align: right; font-weight: 600; flex-shrink: 0; }
+  .row .outcome { width: 68px; text-align: right; color: var(--text-muted); flex-shrink: 0; }
+  .list-wrap { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .footer-note { font-size: 12px; color: var(--text-muted); margin-top: 16px; line-height: 1.6; }
+  button.score-btn {
+    background: var(--accent); color: white; border: none; border-radius: 8px;
+    padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 16px;
+  }
+  button.score-btn:disabled { background: var(--border-strong); cursor: not-allowed; }
+  code { background: #eee; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="titlebar">
+    <h1>Churn risk scoring prototype &mdash; India</h1>
+    <span class="status checking" id="api-status">Checking API...</span>
+  </div>
+  <p class="sub">Prepaid high-value customer churn, scored live by a FastAPI backend (<code>api.py</code>) running the actual trained pipeline (XGBoost, 143-field set, selected on PR-AUC and top-20% capture rather than raw ROC-AUC because only 8.6% of high-value customers churn). Trained on 30,011 real high-value customers from the published "Telecom Churn Case Study" dataset (India/SE Asia prepaid market). Start the API with <code>uvicorn api:app --reload --port 8000</code> before scoring.</p>
+
+  <div class="card">
+    <h2>Score a customer (live model call)</h2>
+    <table class="mtable">
+      <tr><th>Metric</th><th>Month 6</th><th>Month 7</th><th>Month 8 (latest)</th></tr>
+      <tr>
+        <td>ARPU (&#8377;/month)</td>
+        <td><input type="number" id="arpu_6" value="500"></td>
+        <td><input type="number" id="arpu_7" value="480"></td>
+        <td><input type="number" id="arpu_8" value="200"></td>
+      </tr>
+      <tr>
+        <td>Recharge amount (&#8377;)</td>
+        <td><input type="number" id="rech_6" value="500"></td>
+        <td><input type="number" id="rech_7" value="480"></td>
+        <td><input type="number" id="rech_8" value="150"></td>
+      </tr>
+      <tr>
+        <td>Outgoing minutes</td>
+        <td><input type="number" id="og_6" value="300"></td>
+        <td><input type="number" id="og_7" value="280"></td>
+        <td><input type="number" id="og_8" value="90"></td>
+      </tr>
+      <tr>
+        <td>Incoming minutes</td>
+        <td><input type="number" id="ic_6" value="200"></td>
+        <td><input type="number" id="ic_7" value="190"></td>
+        <td><input type="number" id="ic_8" value="60"></td>
+      </tr>
+    </table>
+    <div class="grid2">
+      <div>
+        <label>2G data used, month 8 (MB)</label>
+        <input type="number" id="vol2g" value="50">
+      </div>
+      <div>
+        <label>3G data used, month 8 (MB)</label>
+        <input type="number" id="vol3g" value="100">
+      </div>
+      <div>
+        <label>Roaming outgoing minutes, month 8</label>
+        <input type="number" id="roam" value="45">
+      </div>
+      <div>
+        <label>Age on network (days)</label>
+        <input type="number" id="aon" value="400">
+      </div>
+    </div>
+
+    <button class="score-btn" id="score-btn">Score this customer</button>
+
+    <div class="result">
+      <div>
+        <p class="risk-label">Predicted churn risk</p>
+        <p class="risk-value" id="risk-value">--</p>
+      </div>
+      <div style="text-align:right;">
+        <span class="badge" id="risk-badge"></span>
+        <p class="action" id="action-text"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Real held-out customers, ranked by risk</h2>
+    <p class="list-note">24 real high-value customers from the held-out test set, scored by the same live model, mobile numbers masked, shown against their actual month-9 outcome.</p>
+    <div class="list-wrap" id="customer-list"></div>
+    <p class="footer-note">Red-edged rows are the top 20% by risk score, the group a retention team with limited capacity would call first. Across the full held-out test set, calling this top 20% catches 87% of everyone who actually churns.</p>
+  </div>
+</div>
+
+<script>
+// When opened directly as a local file, call the API on localhost. Once this same page is
+// served BY the API (see api.py's "/" route), call it on its own origin instead -- so the
+// exact same HTML works unmodified locally and once deployed to a public host.
+const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8000" : "";
+
+async function checkApi() {
+  const el = document.getElementById("api-status");
+  try {
+    const res = await fetch(API_BASE + "/health", { signal: AbortSignal.timeout(2000) });
+    if (!res.ok) throw new Error("bad status");
+    el.textContent = "Live model: connected";
+    el.className = "status connected";
+    return true;
+  } catch (e) {
+    el.textContent = "Live model: offline (start uvicorn)";
+    el.className = "status offline";
+    return false;
+  }
+}
+
+function readForm() {
+  const v = id => +document.getElementById(id).value;
+  return {
+    arpu_6: v("arpu_6"), arpu_7: v("arpu_7"), arpu_8: v("arpu_8"),
+    total_rech_amt_6: v("rech_6"), total_rech_amt_7: v("rech_7"), total_rech_amt_8: v("rech_8"),
+    total_og_mou_6: v("og_6"), total_og_mou_7: v("og_7"), total_og_mou_8: v("og_8"),
+    total_ic_mou_6: v("ic_6"), total_ic_mou_7: v("ic_7"), total_ic_mou_8: v("ic_8"),
+    vol_2g_mb_8: v("vol2g"), vol_3g_mb_8: v("vol3g"), roam_og_mou_8: v("roam"), aon: v("aon"),
+  };
+}
+
+function tierBadge(tier) {
+  if (tier === "High risk") return {bg:"var(--red-bg)", fg:"var(--red)"};
+  if (tier === "Medium risk") return {bg:"var(--amber-bg)", fg:"var(--amber)"};
+  return {bg:"var(--green-bg)", fg:"var(--green)"};
+}
+
+async function scoreLive() {
+  const btn = document.getElementById("score-btn");
+  btn.disabled = true;
+  btn.textContent = "Calling API...";
+  try {
+    const res = await fetch(API_BASE + "/score", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(readForm()),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) throw new Error("API returned " + res.status);
+    const data = await res.json();
+    const pct = Math.round(data.risk * 100);
+    document.getElementById("risk-value").textContent = pct + "%";
+    const b = tierBadge(data.tier);
+    const badge = document.getElementById("risk-badge");
+    badge.textContent = data.tier;
+    badge.style.background = b.bg;
+    badge.style.color = b.fg;
+    document.getElementById("action-text").textContent = data.action;
+    document.getElementById("action-text").className = "action";
+  } catch (e) {
+    document.getElementById("risk-value").textContent = "--";
+    document.getElementById("risk-badge").textContent = "";
+    document.getElementById("action-text").textContent =
+      "Could not reach the live API at " + API_BASE + ". Start it with: uvicorn api:app --reload --port 8000";
+    document.getElementById("action-text").className = "error-msg";
+  }
+  btn.disabled = false;
+  btn.textContent = "Score this customer";
+}
+
+document.getElementById("score-btn").addEventListener("click", scoreLive);
+checkApi().then(ok => { if (ok) scoreLive(); });
+
+// Real held-out test customers, scored by the live model, mobile numbers masked to last 4 digits.
+const SAMPLE = [
+  {id:"•••7113", aon:332, rech8:0, risk:0.9895, churned:1},
+  {id:"•••0533", aon:942, rech8:0, risk:0.9881, churned:1},
+  {id:"•••3149", aon:823, rech8:0, risk:0.9865, churned:1},
+  {id:"•••7514", aon:334, rech8:0, risk:0.9862, churned:1},
+  {id:"•••7145", aon:228, rech8:0, risk:0.9861, churned:1},
+  {id:"•••3453", aon:530, rech8:0, risk:0.9860, churned:1},
+  {id:"•••7705", aon:2307, rech8:0, risk:0.9858, churned:1},
+  {id:"•••8434", aon:1248, rech8:0, risk:0.9851, churned:1},
+  {id:"•••5906", aon:274, rech8:0, risk:0.9845, churned:1},
+  {id:"•••4143", aon:970, rech8:0, risk:0.9840, churned:1},
+  {id:"•••0398", aon:753, rech8:800, risk:0.0629, churned:0},
+  {id:"•••9915", aon:474, rech8:1195, risk:0.0629, churned:0},
+  {id:"•••2985", aon:1533, rech8:855, risk:0.0629, churned:0},
+  {id:"•••3191", aon:1626, rech8:3630, risk:0.0629, churned:0},
+  {id:"•••7349", aon:3634, rech8:1268, risk:0.0016, churned:0},
+  {id:"•••4770", aon:2336, rech8:578, risk:0.0016, churned:0},
+  {id:"•••4733", aon:1223, rech8:1511, risk:0.0014, churned:0},
+  {id:"•••9464", aon:2925, rech8:827, risk:0.0013, churned:0},
+  {id:"•••1778", aon:2001, rech8:1184, risk:0.0013, churned:0},
+  {id:"•••1647", aon:1690, rech8:1608, risk:0.0013, churned:0},
+  {id:"•••7177", aon:3510, rech8:1150, risk:0.0011, churned:0},
+  {id:"•••9279", aon:2332, rech8:1109, risk:0.0010, churned:0},
+  {id:"•••8801", aon:3393, rech8:1730, risk:0.0007, churned:0},
+  {id:"•••4783", aon:3108, rech8:882, risk:0.0005, churned:0}
+];
+
+const list = document.getElementById("customer-list");
+SAMPLE.forEach((c, i) => {
+  const row = document.createElement("div");
+  row.className = "row" + (i < 5 ? " top" : "");
+  const pct = Math.round(c.risk * 100);
+  const barColor = pct >= 50 ? "#E24B4A" : pct >= 25 ? "#EF9F27" : "#639922";
+  row.innerHTML = `
+    <span class="id">${c.id}</span>
+    <span class="aon">${c.aon} d</span>
+    <span class="rech">&#8377;${c.rech8}</span>
+    <span class="bar-track"><span class="bar-fill" style="width:${pct}%; background:${barColor};"></span></span>
+    <span class="pct">${pct}%</span>
+    <span class="outcome">${c.churned ? "did churn" : "stayed"}</span>
+  `;
+  list.appendChild(row);
+});
+</script>
+</body>
+</html>

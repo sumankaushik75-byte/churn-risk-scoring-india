@@ -1,0 +1,25 @@
+node_modules/
+data/
+data_india/
+__pycache__/
+*.pyc
+*.pdf
+train_log*.txt
+~$*.docx
+
+# Coursework deliverables -- not needed to run/deploy the API, keep out of the repo
+*.docx
+*.pptx
+
+# Superseded IBM-dataset version, replaced by the India *_india artifacts
+train_model.py
+build_api_artifact.py
+build_submission.py
+generate_charts.py
+benchmark_results.csv
+best_model_curves.npz
+best_model_metadata.json
+best_model_pipeline.joblib
+feature_importance.csv
+logit_core_coefficients.json
+sample_ranked_customers.csv
