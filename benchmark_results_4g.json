@@ -1,0 +1,10 @@
+{
+  "roc_auc": 0.9372,
+  "pr_auc": 0.6994,
+  "accuracy": 0.9027,
+  "precision": 0.4642,
+  "recall": 0.821,
+  "f1": 0.5931,
+  "top20_capture_rate": 0.8673,
+  "n_features": 141
+}
