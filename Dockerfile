@@ -6,7 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY api.py .
-COPY "Churn Risk Scoring - Interactive Prototype.html" .
+COPY ["Churn Risk Scoring - Interactive Prototype.html", "./"]
 COPY best_model_pipeline_india.joblib .
 COPY best_model_metadata_india.json .
 
