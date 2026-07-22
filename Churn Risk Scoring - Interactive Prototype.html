@@ -61,6 +61,20 @@
   }
   button.score-btn:disabled { background: var(--border-strong); cursor: not-allowed; }
   code { background: #eee; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .mode-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
+  .mode-btn {
+    flex: 1; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-strong);
+    background: white; font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--text-secondary);
+    text-align: center;
+  }
+  .mode-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .exp-badge {
+    font-size: 10.5px; font-weight: 700; color: var(--amber); background: var(--amber-bg);
+    padding: 2px 8px; border-radius: 20px; margin-left: 8px; display: none;
+  }
+  .exp-badge.shown { display: inline-block; }
+  .exp-note { font-size: 11.5px; color: var(--amber); margin: -8px 0 14px; display: none; line-height: 1.5; }
+  .exp-note.shown { display: block; }
 </style>
 </head>
 <body>
@@ -72,7 +86,12 @@
   <p class="sub">Prepaid high-value customer churn, scored live by a FastAPI backend (<code>api.py</code>) running the actual trained pipeline (XGBoost, 143-field set, selected on PR-AUC and top-20% capture rather than raw ROC-AUC because only 8.6% of high-value customers churn). Trained on 30,011 real high-value customers from the published "Telecom Churn Case Study" dataset (India/SE Asia prepaid market). Start the API with <code>uvicorn api:app --reload --port 8000</code> before scoring.</p>
 
   <div class="card">
-    <h2>Score a customer (live model call)</h2>
+    <h2>Score a customer (live model call)<span class="exp-badge" id="exp-badge">EXPERIMENTAL</span></h2>
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="mode-2g3g-btn">2G/3G (real data, submission model)</button>
+      <button class="mode-btn" id="mode-4g-btn">4G synthetic (experimental)</button>
+    </div>
+    <p class="exp-note" id="exp-note">This mode calls a second endpoint (<code>/score-4g</code>) retrained on a synthetic 4G/GB-scale data-usage projection, since the real dataset only has 2G/3G fields. Voice, recharge, and tenure are still real; only the data-usage figure is a grounded synthetic stand-in. Reference only &mdash; not part of the graded submission.</p>
     <table class="mtable">
       <tr><th>Metric</th><th>Month 6</th><th>Month 7</th><th>Month 8 (latest)</th></tr>
       <tr>
@@ -100,7 +119,7 @@
         <td><input type="number" id="ic_8" value="60"></td>
       </tr>
     </table>
-    <div class="grid2">
+    <div class="grid2" id="grid-2g3g">
       <div>
         <label>2G data used, month 8 (MB)</label>
         <input type="number" id="vol2g" value="50">
@@ -116,6 +135,20 @@
       <div>
         <label>Age on network (days)</label>
         <input type="number" id="aon" value="400">
+      </div>
+    </div>
+    <div class="grid2" id="grid-4g" style="display:none;">
+      <div>
+        <label>Mobile data used, month 8 (GB) &mdash; synthetic 4G projection</label>
+        <input type="number" id="datagb" value="8">
+      </div>
+      <div>
+        <label>Roaming outgoing minutes, month 8</label>
+        <input type="number" id="roam_4g" value="45">
+      </div>
+      <div>
+        <label>Age on network (days)</label>
+        <input type="number" id="aon_4g" value="400">
       </div>
     </div>
 
@@ -162,15 +195,32 @@ async function checkApi() {
   }
 }
 
+let mode = "2g3g"; // "2g3g" (real, submission model) or "4g" (synthetic, experimental)
+
 function readForm() {
   const v = id => +document.getElementById(id).value;
-  return {
+  const base = {
     arpu_6: v("arpu_6"), arpu_7: v("arpu_7"), arpu_8: v("arpu_8"),
     total_rech_amt_6: v("rech_6"), total_rech_amt_7: v("rech_7"), total_rech_amt_8: v("rech_8"),
     total_og_mou_6: v("og_6"), total_og_mou_7: v("og_7"), total_og_mou_8: v("og_8"),
     total_ic_mou_6: v("ic_6"), total_ic_mou_7: v("ic_7"), total_ic_mou_8: v("ic_8"),
-    vol_2g_mb_8: v("vol2g"), vol_3g_mb_8: v("vol3g"), roam_og_mou_8: v("roam"), aon: v("aon"),
   };
+  if (mode === "4g") {
+    return { ...base, data_gb_8: v("datagb"), roam_og_mou_8: v("roam_4g"), aon: v("aon_4g") };
+  }
+  return { ...base, vol_2g_mb_8: v("vol2g"), vol_3g_mb_8: v("vol3g"), roam_og_mou_8: v("roam"), aon: v("aon") };
+}
+
+function setMode(newMode) {
+  mode = newMode;
+  const is4g = mode === "4g";
+  document.getElementById("mode-2g3g-btn").classList.toggle("active", !is4g);
+  document.getElementById("mode-4g-btn").classList.toggle("active", is4g);
+  document.getElementById("grid-2g3g").style.display = is4g ? "none" : "grid";
+  document.getElementById("grid-4g").style.display = is4g ? "grid" : "none";
+  document.getElementById("exp-badge").classList.toggle("shown", is4g);
+  document.getElementById("exp-note").classList.toggle("shown", is4g);
+  scoreLive();
 }
 
 function tierBadge(tier) {
@@ -184,7 +234,8 @@ async function scoreLive() {
   btn.disabled = true;
   btn.textContent = "Calling API...";
   try {
-    const res = await fetch(API_BASE + "/score", {
+    const endpoint = mode === "4g" ? "/score-4g" : "/score";
+    const res = await fetch(API_BASE + endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(readForm()),
@@ -213,6 +264,8 @@ async function scoreLive() {
 }
 
 document.getElementById("score-btn").addEventListener("click", scoreLive);
+document.getElementById("mode-2g3g-btn").addEventListener("click", () => setMode("2g3g"));
+document.getElementById("mode-4g-btn").addEventListener("click", () => setMode("4g"));
 checkApi().then(ok => { if (ok) scoreLive(); });
 
 // Real held-out test customers, scored by the live model, mobile numbers masked to last 4 digits.
