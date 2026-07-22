@@ -23,3 +23,7 @@ best_model_pipeline.joblib
 feature_importance.csv
 logit_core_coefficients.json
 sample_ranked_customers.csv
+
+# Synthetic-4G exploration: keep the source data out of the repo (large + reference-only),
+# but do track the trained artifact and scripts so /score-4g can be deployed.
+data_india/synthetic_4g_high_value_customers.csv

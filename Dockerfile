@@ -9,6 +9,8 @@ COPY api.py .
 COPY ["Churn Risk Scoring - Interactive Prototype.html", "./"]
 COPY best_model_pipeline_india.joblib .
 COPY best_model_metadata_india.json .
+COPY best_model_pipeline_4g.joblib .
+COPY best_model_metadata_4g.json .
 
 ENV PORT=8000
 EXPOSE 8000

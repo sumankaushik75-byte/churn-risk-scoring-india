@@ -42,6 +42,17 @@ RAW_FIELDS = METADATA["raw_fields"]
 DECLINE_FIELDS = METADATA["decline_fields"]
 MEDIANS = METADATA["field_medians"]
 
+# Experimental: same model, retrained on a synthetic 4G-era data-usage projection (the
+# underlying dataset only has 2G/3G fields). See build_synthetic_4g_data.py for how this
+# is grounded in real FY26 operator averages. Reference/exploration endpoint only -- not
+# part of the graded submission, kept fully separate from the /score path above.
+pipeline_4g = joblib.load("best_model_pipeline_4g.joblib")
+with open("best_model_metadata_4g.json") as f:
+    METADATA_4G = json.load(f)
+
+ALL_FIELDS_4G = METADATA_4G["all_fields"]
+MEDIANS_4G = METADATA_4G["field_medians"]
+
 
 class Customer(BaseModel):
     arpu_6: float
@@ -102,3 +113,58 @@ def score(customer: Customer):
     usage_decline = X["total_og_mou_decline"].iloc[0]
     tier, action = tier_and_action(risk, rech_decline, usage_decline)
     return {"risk": round(risk, 4), "tier": tier, "action": action}
+
+
+class Customer4G(BaseModel):
+    arpu_6: float
+    arpu_7: float
+    arpu_8: float
+    total_rech_amt_6: float
+    total_rech_amt_7: float
+    total_rech_amt_8: float
+    total_og_mou_6: float
+    total_og_mou_7: float
+    total_og_mou_8: float
+    total_ic_mou_6: float
+    total_ic_mou_7: float
+    total_ic_mou_8: float
+    data_gb_8: float
+    roam_og_mou_8: float
+    aon: int
+
+
+def build_feature_row_4g(customer: Customer4G) -> pd.DataFrame:
+    row = dict(MEDIANS_4G)
+    row.update(customer.model_dump())
+    for base in ["arpu", "total_og_mou", "total_ic_mou", "total_rech_amt"]:
+        row[f"{base}_decline"] = (row[f"{base}_6"] + row[f"{base}_7"]) / 2 - row[f"{base}_8"]
+    # data_gb_decline needs months 6/7, which aren't exposed in the demo form; hold them at
+    # their median and only vary month 8 with what the caller actually sent.
+    row["data_gb_decline"] = (row["data_gb_6"] + row["data_gb_7"]) / 2 - row["data_gb_8"]
+    return pd.DataFrame([{f: row[f] for f in ALL_FIELDS_4G}])
+
+
+@app.get("/health-4g")
+def health_4g():
+    return {"status": "ok", "model": METADATA_4G["model"], "feature_set": METADATA_4G["feature_set"],
+            "note": METADATA_4G["note"]}
+
+
+@app.get("/model-info-4g")
+def model_info_4g():
+    return {k: v for k, v in METADATA_4G.items() if k not in ("field_medians", "all_fields")}
+
+
+@app.post("/score-4g")
+def score_4g(customer: Customer4G):
+    """Experimental: XGBoost retrained on a synthetic 4G/GB-scale data-usage projection
+    instead of the dataset's real 2G/3G MB fields. Voice, recharge, and tenure signals are
+    real and unchanged; only the data-usage feature is a grounded synthetic stand-in.
+    Reference endpoint, not part of the graded submission."""
+    X = build_feature_row_4g(customer)
+    risk = float(pipeline_4g.predict_proba(X)[:, 1][0])
+    rech_decline = X["total_rech_amt_decline"].iloc[0]
+    usage_decline = X["total_og_mou_decline"].iloc[0]
+    tier, action = tier_and_action(risk, rech_decline, usage_decline)
+    return {"risk": round(risk, 4), "tier": tier, "action": action, "experimental": True,
+            "note": "Synthetic 4G-projected data usage; voice/recharge/tenure fields are real."}
